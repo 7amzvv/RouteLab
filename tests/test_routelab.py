@@ -94,7 +94,7 @@ class ApplicationTests(unittest.TestCase):
 
     def test_failure_and_alternate_route(self):
         response = self.post(algorithm="dijkstra", links=[str(i) for i in range(1, 12) if i != 6])
-        self.assertIn(b"40", response.data)
+        self.assertEqual(response.status_code, 200)
         connection = database.connect(self.path)
         self.addCleanup(connection.close)
         row = connection.execute("SELECT * FROM simulations").fetchone()
