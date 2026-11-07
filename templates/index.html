@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RouteLab — Simulateur de routage</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header><a class="brand" href="{{ url_for('index') }}"><span class="logo">R</span>RouteLab</a><span class="badge">LABORATOIRE RÉSEAU</span></header>
+  <main>
+    <div class="intro"><div><p class="eyebrow">COMPRENDRE LE ROUTAGE</p><h1>Un paquet. Plusieurs chemins.</h1><p>Explorez un réseau, comparez les itinéraires et observez l’effet d’une panne.</p></div><span class="network-count">08 <small>routeurs connectés</small></span></div>
+    {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+    <div class="workspace">
+      <aside class="panel controls">
+        <p class="eyebrow">01 / CONFIGURATION</p><h2>Envoyer un paquet</h2>
+        <form id="simulation" method="post" action="{{ url_for('index') }}">
+          <input type="hidden" name="token" value="{{ session.token }}">
+          <label for="source">Routeur de départ</label><select id="source" name="source">{% for router in routers %}<option value="{{ router.id }}" {% if router.id == source %}selected{% endif %}>{{ router.name }}</option>{% endfor %}</select>
+          <label for="destination">Destination</label><select id="destination" name="destination">{% for router in routers %}<option value="{{ router.id }}" {% if router.id == destination %}selected{% endif %}>{{ router.name }}</option>{% endfor %}</select>
+          <fieldset><legend>Algorithme</legend><label class="choice"><input type="radio" name="algorithm" value="bfs" {% if algorithm == 'bfs' %}checked{% endif %}><span><strong>BFS</strong><small>Le moins de sauts</small></span></label><label class="choice"><input type="radio" name="algorithm" value="dijkstra" {% if algorithm == 'dijkstra' %}checked{% endif %}><span><strong>Dijkstra</strong><small>La plus faible latence</small></span></label></fieldset>
+          <button class="primary" type="submit">Calculer le trajet <span>→</span></button>
+        </form>
+        <div class="hint"><strong>À essayer</strong><p>Comparez R1 → R8 avec les deux algorithmes. Le chemin le plus court n’est pas toujours le plus rapide.</p></div>
+      </aside>
+      <section class="panel network-panel">
+        <div class="panel-heading"><div><p class="eyebrow">02 / TOPOLOGIE</p><h2>Réseau de démonstration</h2></div><span class="badge">BIDIRECTIONNEL</span></div>
+        <svg viewBox="0 0 880 430" role="img" aria-labelledby="network-title network-desc">
+          <title id="network-title">Réseau de huit routeurs</title><desc id="network-desc">Les connexions indiquent leur latence en millisecondes. Les traits pointillés signalent les connexions désactivées. Le trajet calculé est indiqué en vert et sous le schéma.</desc>
+          <defs><pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#dce3e8"/></pattern></defs>
+          <rect width="880" height="430" fill="url(#grid)"/>
+          {% for link in links %}
+          {% set a = positions[link.source] %}{% set b = positions[link.target] %}
+          <g class="edge {% if not link.active %}disabled{% elif (link.source, link.target) in route_edges %}route{% endif %}"><line x1="{{ a.x }}" y1="{{ a.y }}" x2="{{ b.x }}" y2="{{ b.y }}"/><rect x="{{ (a.x+b.x)/2-26 }}" y="{{ (a.y+b.y)/2-12 }}" width="52" height="24" rx="6"/><text x="{{ (a.x+b.x)/2 }}" y="{{ (a.y+b.y)/2+5 }}">{{ link.latency }} ms</text></g>
+          {% endfor %}
+          {% for router in routers %}<g class="router {% if result and router.id in result.path %}visited{% endif %}"><circle cx="{{ router.x }}" cy="{{ router.y }}" r="25"/><text x="{{ router.x }}" y="{{ router.y+6 }}">{{ router.name }}</text>{% if router.id == source or router.id == destination %}<text class="endpoint" x="{{ router.x }}" y="{{ router.y+47 }}">{% if source == destination %}DÉPART / ARRIVÉE{% elif router.id == source %}DÉPART{% else %}ARRIVÉE{% endif %}</text>{% endif %}</g>{% endfor %}
+        </svg>
+        <div class="legend"><span><i></i>Active</span><span><i class="green"></i>Trajet calculé</span><span><i class="dashed"></i>Désactivée</span><span>Latences en ms</span></div>
+        <div class="result" aria-live="polite">
+          {% if result %}
+          <div><p class="eyebrow">RÉSULTAT / {{ algorithm|upper }}</p>{% if not result.path %}<h3>Aucun chemin disponible</h3><p>Réactivez une connexion pour relier ces routeurs.</p>{% elif source == destination %}<h3>Aucun déplacement nécessaire</h3><p>Le paquet est déjà sur {{ positions[source].name }}.</p>{% else %}<h3>{% for id in result.path %}{{ positions[id].name }}{% if not loop.last %} <span>→</span> {% endif %}{% endfor %}</h3><p>{{ 'Le minimum de sauts' if algorithm == 'bfs' else 'La latence totale minimale' }} pour cet état du réseau.</p>{% endif %}</div>
+          {% if result.path %}<div class="metrics"><div><strong>{{ result.hops }}</strong><small>saut{{ 's' if result.hops != 1 else '' }}</small></div><div><strong>{{ result.latency }}<em> ms</em></strong><small>latence totale</small></div></div>{% endif %}
+          {% else %}<div><h3>Votre réseau est prêt.</h3><p>Choisissez deux routeurs, puis lancez une simulation.</p></div>{% endif %}
+        </div>
+      </section>
+    </div>
+    <div class="lower">
+      <section class="panel"><div class="panel-heading"><div><p class="eyebrow">03 / CONNEXIONS</p><h2>Simuler une panne</h2></div><form action="{{ url_for('reset') }}" method="post"><input type="hidden" name="token" value="{{ session.token }}"><button class="secondary">Tout réactiver</button></form></div><p class="subtle">Décochez des connexions, puis cliquez sur « Calculer le trajet ». Les modifications s’appliquent au calcul suivant.</p>
+        <div class="links">{% for link in links %}<label class="link-choice"><input type="checkbox" name="links" value="{{ link.id }}" form="simulation" {% if link.active %}checked{% endif %}><strong>R{{ link.source }} ↔ R{{ link.target }}</strong><span>{{ link.latency }} ms</span></label>{% endfor %}</div>
+      </section>
+      <section class="panel"><p class="eyebrow">04 / HISTORIQUE</p><h2>Dernières simulations</h2><p class="subtle">Les 10 derniers calculs, conservés dans SQLite. Cliquez pour retrouver l’état du réseau au moment du calcul.</p>
+        {% if history %}<div class="table-wrap"><table><thead><tr><th>Date locale</th><th>Trajet</th><th>Méthode</th><th>Sauts</th><th>Latence</th></tr></thead><tbody>{% for item in history %}<tr><td><a href="{{ url_for('index', simulation=item.id) }}">{{ item.created_at }}</a></td><td>R{{ item.source }} → R{{ item.destination }}</td><td>{{ item.algorithm|upper }}</td><td>{{ item.hops if item.hops is not none else '—' }}</td><td>{{ (item.latency|string) + ' ms' if item.latency is not none else 'Sans chemin' }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<div class="empty">Aucune simulation pour le moment.</div>{% endif %}
+      </section>
+    </div>
+    <footer>RouteLab <span>Simulation pédagogique · Python / Flask / SQLite</span></footer>
+  </main>
+</body>
+</html>
